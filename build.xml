@@ -15,7 +15,7 @@
 
   <!-- Every non-api shim module. These will be compiled/resolved after api. -->
   <!-- <property name="shim-non-api-modules" value="hive-jdbc,hadoop-20,cdh42,cdh50,hdp13,mapr30,mapr31" /> -->
-  <property name="shim-non-api-modules" value="hive-jdbc,hadoop-20,cdh50,hdp20,mapr31" />
+  <property name="shim-non-api-modules" value="hive-jdbc,cdh50" />
   <!-- These are the modules this script should build -->
   <property name="modules" value="api,${shim-non-api-modules}" />
 	  
