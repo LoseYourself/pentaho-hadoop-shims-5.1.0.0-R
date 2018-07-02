@@ -826,12 +826,12 @@ public class CommonHBaseConnection extends HBaseConnection {
 
     java.io.File prncipals = new java.io.File("prncipal.properties");
     if(!prncipals.exists()) {
-      System.err.println("Could not find the file prncipal.properties. The file path is [" + prncipals.getAbsolutePath() + "].");
-      throw new java.io.IOException("Could not find the file prncipal.properties. The file path is [" + prncipals.getAbsolutePath() + "].");
+      System.err.println("Could not find the file prncipal.properties. The file path is [" + prncipals + "].");
+      throw new java.io.IOException("Could not find the file prncipal.properties. The file path is [" + prncipals + "].");
     }
 
     java.util.Properties props = new java.util.Properties();
-    java.io.BufferedReader bf = new java.io.BufferedReader(new java.io.FileReader(prncipals.getAbsolutePath()));
+    java.io.BufferedReader bf = new java.io.BufferedReader(new java.io.FileReader(prncipals));
     props.load(bf);
 
     String krb5conf = props.getProperty("krb5.conf");
