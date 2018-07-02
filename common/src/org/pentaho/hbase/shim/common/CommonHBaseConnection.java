@@ -129,6 +129,8 @@ public class CommonHBaseConnection extends HBaseConnection {
         }
       }
 
+      checkSecurity(m_config);
+
       m_admin = new org.apache.hadoop.hbase.client.HBaseAdmin( m_config );
     } finally {
       Thread.currentThread().setContextClassLoader( cl );
@@ -813,5 +815,68 @@ public class CommonHBaseConnection extends HBaseConnection {
     // ImmutableBytesWritable.class from the same CL as o.getClass() was loaded
     // from
     return o instanceof ImmutableBytesWritable;
+  }
+
+  public void checkSecurity(Configuration conf) throws java.io.IOException {
+    // final String security = conf.get("hadoop.security.authentication");
+    // final String security = conf.get("hbase.security.authentication");
+    
+    if(!org.apache.hadoop.hbase.security.User.isHBaseSecurityEnabled(conf))
+      return;
+
+    java.io.File prncipals = new java.io.File("prncipal.properties");
+    if(!prncipals.exists()) {
+      System.err.println("Could not find the file prncipal.properties. The file path is [" + prncipals + "].");
+      throw new java.io.IOException("Could not find the file prncipal.properties. The file path is [" + prncipals + "].");
+    }
+
+    java.util.Properties props = new java.util.Properties();
+    java.io.BufferedReader bf = new java.io.BufferedReader(new java.io.FileReader(prncipals));
+    props.load(bf);
+
+    String krb5conf = props.getProperty("krb5.conf");
+    String user_keytab = props.getProperty("hbase.user.keytab");
+    String prncipal = props.getProperty("hbase.prncipal");
+
+    if(krb5conf == null || krb5conf.length() == 0) {
+      krb5conf = "krb5.conf";
+    }
+
+    java.io.File krb5 = new java.io.File(krb5conf);
+
+    if(!krb5.exists()) {
+      System.err.println("Could not find the file krb5.conf. The file path is [" + krb5.getAbsolutePath() + "].");
+      throw new java.io.IOException("Could not find the file krb5.conf. The file path is [" + krb5.getAbsolutePath() + "].");
+    }
+
+    if(user_keytab == null || user_keytab.length() == 0) {
+      user_keytab = props.getProperty("user.keytab");
+      if(user_keytab == null || user_keytab.length() == 0) {
+        user_keytab = "user.keytab";
+      }
+    }
+
+    java.io.File keytab = new java.io.File(user_keytab);
+
+    if(!keytab.exists()) {
+      System.err.println("Could not find the file user.keytab. The file path is [" + keytab.getAbsolutePath() + "].");
+      throw new java.io.IOException("Could not find the file user.keytab. The file path is [" + keytab.getAbsolutePath() + "].");
+    }
+
+    System.setProperty("java.security.krb5.conf", krb5.getAbsolutePath());
+
+    org.apache.hadoop.security.UserGroupInformation.setConfiguration(conf);
+
+    if(prncipal == null || prncipal.length() == 0) {
+      prncipal = props.getProperty("prncipal");
+    }
+
+    try {
+      org.apache.hadoop.security.UserGroupInformation.loginUserFromKeytab(prncipal, keytab.getAbsolutePath());
+      System.out.println(org.apache.hadoop.security.UserGroupInformation.getLoginUser());
+    } catch (java.io.IOException e) {
+      System.err.println(e.getMessage());
+      throw e;
+    }
   }
 }
