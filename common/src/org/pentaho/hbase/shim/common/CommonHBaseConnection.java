@@ -865,6 +865,8 @@ public class CommonHBaseConnection extends HBaseConnection {
 
     System.setProperty("java.security.krb5.conf", krb5.getAbsolutePath());
 
+    setJaasConfiguration("Client", prncipal, keytab.getAbsolutePath());
+
     org.apache.hadoop.security.UserGroupInformation.setConfiguration(conf);
 
     if(prncipal == null || prncipal.length() == 0) {
@@ -877,6 +879,139 @@ public class CommonHBaseConnection extends HBaseConnection {
     } catch (java.io.IOException e) {
       System.err.println(e.getMessage());
       throw e;
+    }
+  }
+  
+  public void setJaasConfiguration(String loginContextName, String principal, String keytab) throws java.io.IOException{
+    
+    javax.security.auth.login.Configuration.setConfiguration(new JaasConfiguration(loginContextName, principal, keytab));
+
+    javax.security.auth.login.Configuration conf = javax.security.auth.login.Configuration.getConfiguration();
+    if (!(conf instanceof JaasConfiguration)) {
+      System.err.println("javax.security.auth.login.Configuration is not JaasConfiguration.");
+      throw new java.io.IOException("javax.security.auth.login.Configuration is not JaasConfiguration.");
+    }
+    
+    javax.security.auth.login.AppConfigurationEntry[] entrys = conf.getAppConfigurationEntry(loginContextName);
+    if (entrys == null) {
+      System.err.println("javax.security.auth.login.Configuration has no AppConfigurationEntry named " + loginContextName + ".");
+      throw new java.io.IOException("javax.security.auth.login.Configuration has no AppConfigurationEntry named " + loginContextName + ".");
+    }
+    
+    boolean checkPrincipal = false;
+    boolean checkKeytab = false;
+    for (int i = 0; i < entrys.length; i++) {
+      if (entrys[i].getOptions().get("principal").equals(principal)) {
+        checkPrincipal = true;
+      }
+
+      if (IS_IBM_JDK) {
+        if (entrys[i].getOptions().get("useKeytab").equals(keytab)) {
+          checkKeytab = true;
+        }
+      } else {
+        if (entrys[i].getOptions().get("keyTab").equals(keytab)) {
+          checkKeytab = true;
+        }
+      }
+
+    }
+
+    if (!checkPrincipal) {
+      System.err.println("AppConfigurationEntry named " + loginContextName + " does not have principal value of " + principal + ".");
+      throw new java.io.IOException("AppConfigurationEntry named " + loginContextName + " does not have principal value of " + principal + ".");
+    }
+
+    if (!checkKeytab) {
+      System.err.println("AppConfigurationEntry named " + loginContextName + " does not have keyTab value of " + keytab + ".");
+      throw new java.io.IOException("AppConfigurationEntry named " + loginContextName + " does not have keyTab value of " + keytab + ".");
+    }
+  }
+
+  private static final boolean IS_IBM_JDK = System.getProperty("java.vendor").contains("IBM");
+
+  /**
+   * copy from hbase zkutil 0.94&0.98 A JAAS configuration that defines the login modules that we want to use for login.
+   */
+  private static class JaasConfiguration extends javax.security.auth.login.Configuration {
+    private static final java.util.Map<String, String> BASIC_JAAS_OPTIONS = new java.util.HashMap<String, String>();
+    static {
+      String jaasEnvVar = System.getenv("HBASE_JAAS_DEBUG");
+      if (jaasEnvVar != null && "true".equalsIgnoreCase(jaasEnvVar)) {
+        BASIC_JAAS_OPTIONS.put("debug", "true");
+      }
+    }
+
+    private static final java.util.Map<String, String> KEYTAB_KERBEROS_OPTIONS = new java.util.HashMap<String, String>();
+    static {
+      if (IS_IBM_JDK) {
+        KEYTAB_KERBEROS_OPTIONS.put("credsType", "both");
+      } else {
+        KEYTAB_KERBEROS_OPTIONS.put("useKeyTab", "true");
+        KEYTAB_KERBEROS_OPTIONS.put("useTicketCache", "false");
+        KEYTAB_KERBEROS_OPTIONS.put("doNotPrompt", "true");
+        KEYTAB_KERBEROS_OPTIONS.put("storeKey", "true");
+      }
+
+      KEYTAB_KERBEROS_OPTIONS.putAll(BASIC_JAAS_OPTIONS);
+    }
+
+    private static final javax.security.auth.login.AppConfigurationEntry KEYTAB_KERBEROS_LOGIN = new javax.security.auth.login.AppConfigurationEntry(
+        org.apache.hadoop.security.authentication.util.KerberosUtil.getKrb5LoginModuleName(),
+        javax.security.auth.login.AppConfigurationEntry.LoginModuleControlFlag.REQUIRED, KEYTAB_KERBEROS_OPTIONS);
+
+    private static final javax.security.auth.login.AppConfigurationEntry[] KEYTAB_KERBEROS_CONF = new javax.security.auth.login.AppConfigurationEntry[] {
+        KEYTAB_KERBEROS_LOGIN };
+
+    private javax.security.auth.login.Configuration baseConfig;
+
+    private final String loginContextName;
+
+    private final boolean useTicketCache;
+
+    private final String keytabFile;
+
+    private final String principal;
+
+    public JaasConfiguration(String loginContextName, String principal, String keytabFile) throws java.io.IOException {
+      this(loginContextName, principal, keytabFile, keytabFile == null || keytabFile.length() == 0);
+    }
+
+    private JaasConfiguration(String loginContextName, String principal, String keytabFile, boolean useTicketCache) throws java.io.IOException {
+      try {
+        this.baseConfig = javax.security.auth.login.Configuration.getConfiguration();
+      } catch (SecurityException e) {
+        this.baseConfig = null;
+      }
+      this.loginContextName = loginContextName;
+      this.useTicketCache = useTicketCache;
+      this.keytabFile = keytabFile;
+      this.principal = principal;
+
+      initKerberosOption();
+      System.out.println("JaasConfiguration loginContextName=" + loginContextName + " principal=" + principal + " useTicketCache=" + useTicketCache + " keytabFile=" + keytabFile);
+    }
+
+    private void initKerberosOption() throws java.io.IOException {
+      if (!useTicketCache) {
+        if (IS_IBM_JDK) {
+          KEYTAB_KERBEROS_OPTIONS.put("useKeytab", keytabFile);
+        } else {
+          KEYTAB_KERBEROS_OPTIONS.put("keyTab", keytabFile);
+          KEYTAB_KERBEROS_OPTIONS.put("useKeyTab", "true");
+          KEYTAB_KERBEROS_OPTIONS.put("useTicketCache", useTicketCache ? "true" : "false");
+        }
+      }
+      KEYTAB_KERBEROS_OPTIONS.put("principal", principal);
+    }
+
+    public javax.security.auth.login.AppConfigurationEntry[] getAppConfigurationEntry(String appName) {
+      if (loginContextName.equals(appName)) {
+        return KEYTAB_KERBEROS_CONF;
+      }
+      if (baseConfig != null)
+        return baseConfig.getAppConfigurationEntry(appName);
+      return (null);
     }
   }
 }
